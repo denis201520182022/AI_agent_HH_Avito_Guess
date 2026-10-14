@@ -40,10 +40,9 @@ class JobContext(Base):
 
     title = Column(String(255))
     city = Column(String(100))
-    is_active = Column(Boolean, default=True) # <-- НОВЫЙ СТОЛБЕЦ
+    is_active = Column(Boolean, default=True)
 
     description_data = Column(JSONB, server_default='{}')
-
 
     # Остаток квот на открытие контактов именно для этой вакансии
     # Клиент вводит число в таблицу, бот обновляет это поле, а затем минусует при поиске
@@ -66,7 +65,7 @@ class Candidate(Base):
     __tablename__ = 'candidates'
     
     id = Column(Integer, primary_key=True)
-    platform_user_id = Column(String(50), unique=True, index=True) # ID юзера на платформе
+    platform_user_id = Column(String(50), unique=True, index=True)
     
     full_name = Column(String(255))
     phone_number = Column(String(50), nullable=True)
@@ -220,11 +219,9 @@ class AnalyticsEvent(Base):
     
     event_type = Column(String(50), index=True)
     
-    # --- НОВЫЕ ПОЛЯ ---
     city = Column(String(100), index=True) # Для срезов по городам
     interview_date = Column(Date, index=True, nullable=True) # Для доходимости
-    mode = Column(String(50), index=True, server_default='standard') # 'standard' (задел на будущее)
-    # ------------------
+    mode = Column(String(50), index=True, server_default='standard') # 'standard'
 
     event_data = Column(JSONB, server_default='{}')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -248,7 +245,6 @@ class Director(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relationships
     vacancy = relationship("JobContext", back_populates="director", foreign_keys=[JobContext.director_id])
     account = relationship("Account", foreign_keys=[account_id])
 
@@ -260,7 +256,7 @@ class SearchStatus(Base):
     id = Column(Integer, primary_key=True)
     account_id = Column(Integer, ForeignKey('accounts.id'), unique=True)
 
-    # Тот самый рубильник: True - ищем, False - всё стоит на паузе
+    #рубильник: True - ищем, False - всё стоит на паузе
     is_enabled = Column(Boolean, default=False)
 
     account = relationship("Account")

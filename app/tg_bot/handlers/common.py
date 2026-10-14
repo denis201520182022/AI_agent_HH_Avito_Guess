@@ -2,7 +2,6 @@
 
 import logging
 from datetime import date, datetime, timedelta
-
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
@@ -23,7 +22,6 @@ from app.db.models import Dialogue, AnalyticsEvent, Account, JobContext
 from datetime import date, timedelta
 from aiogram.utils.formatting import Text, Bold, Italic
 from app.db.models import AnalyticsEvent
-
 from app.db.models import TelegramUser
 from app.tg_bot.keyboards import (
     user_keyboard, 
@@ -43,29 +41,19 @@ from app.db.models import Dialogue, AnalyticsEvent, Account, JobContext
 logger = logging.getLogger(__name__)
 router = Router()
 
-# Состояния для FSM (экспорт Excel)
 class ExportStates(StatesGroup):
     waiting_for_range = State() 
-
-
 
 async def _build_7day_stats_content(session: AsyncSession) -> Text:
     content_parts = [
         Bold("📊 Статистика откликов за 7 дней:"), "\n", 
         Italic("(по дате прихода кандидата)"), "\n\n"
     ]
-    
-    # 1. Формируем список последних 7 дней
     today = date.today()
     days = [today - timedelta(days=i) for i in range(7)]
     has_any_data = False
 
     for day in days:
-        # 2. ГЛУБОКИЙ ЗАПРОС: 
-        # Берем все диалоги, созданные в конкретный день.
-        # С помощью агрегации CASE/MAX проверяем наличие событий аналитики для каждого диалога.
-        # Это гарантирует, что один отклик попадет только в ОДНУ (высшую по приоритету) категорию.
-        
         stmt = (
             select(
                 Dialogue.id,
@@ -96,7 +84,6 @@ async def _build_7day_stats_content(session: AsyncSession) -> Text:
             in_work_count = 0           # В работе (нет финала и не уснул)
 
             for row in day_rows:
-                # ЛОГИКА ПРИОРИТЕТОВ:
                 if row.is_qual == 1:
                     qual_count += 1
                 elif row.is_rej == 1:
@@ -104,10 +91,8 @@ async def _build_7day_stats_content(session: AsyncSession) -> Text:
                 elif row.is_timeout == 1:
                     timeout_count += 1
                 else:
-                    # Если событий финала нет — значит кандидат еще в процессе общения
                     in_work_count += 1
 
-            # Форматируем строку дня
             day_str = day.strftime('%d.%m (%a)')
             content_parts.extend([
                 Bold(f"📅 {day_str}"), "\n",
@@ -125,7 +110,6 @@ async def _build_7day_stats_content(session: AsyncSession) -> Text:
     return Text(*content_parts)
 
 # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ EXCEL ---
-
 async def generate_and_send_excel(message: Message, start_date: date, end_date: date, session: AsyncSession, state: FSMContext):
     msg_wait = await message.answer("⏳ Формирую детальный аналитический отчет по событиям...")
     

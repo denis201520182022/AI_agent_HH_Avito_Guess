@@ -6,13 +6,10 @@ import time
 import json
 from typing import Optional
 from redis.asyncio import Redis
-
 from app.core.config import settings
-from app.core.rabbitmq import mq # Для алертов
-
+from app.core.rabbitmq import mq 
 from app.utils.logger import logger
 
-# Глобальный клиент (Singleton)
 _redis_client: Optional[Redis] = None
 
 def get_redis_client() -> Redis:
@@ -20,11 +17,9 @@ def get_redis_client() -> Redis:
     global _redis_client
     if _redis_client is None:
         logger.info(f"🔌 [Redis] Инициализация клиента: {settings.REDIS_URL}")
-        # Берем параметры из твоего центрального конфига
         _redis_client = Redis.from_url(
             settings.REDIS_URL, 
             decode_responses=True,
-            # Добавляем параметры надежности
             socket_timeout=5,
             retry_on_timeout=True
         )
@@ -50,7 +45,6 @@ async def send_redis_alert(error_msg: str):
         logger.error("Не удалось отправить алерт через RabbitMQ")
 
 # --- 1. РАСПРЕДЕЛЕННЫЙ СЕМАФОР (Для OpenAI) ---
-
 class DistributedSemaphore:
     """Контролирует КОЛИЧЕСТВО ОДНОВРЕМЕННЫХ запросов между всеми воркерами"""
     def __init__(self, name: str, limit: int, timeout: int = 60):
@@ -70,7 +64,6 @@ class DistributedSemaphore:
         logger.debug(f"  [Semaphore] Попытка захвата '{self.name}' (limit={self.limit})...")
         start_wait = time.time()
         while True:
-            # Lua-скрипт гарантирует атомарность (никто не вклинится между GET и INCR)
             lua_script = """
             local current = redis.call('get', KEYS[1])
             if current == false then current = 0 else current = tonumber(current) end
@@ -96,8 +89,6 @@ class DistributedSemaphore:
                 logger.error(f"❌ Redis Semaphore Error: {e}")
                 await send_redis_alert(f"Semaphore {self.name} failed: {e}")
                 await asyncio.sleep(2)
-            
-            # Спим чуть-чуть перед следующей попыткой
             await asyncio.sleep(0.1)
 
     async def release(self):
@@ -115,7 +106,6 @@ class DistributedSemaphore:
             logger.error(f"❌ Redis Release Error: {e}")
 
 # --- 2. БЛОКИРОВКИ (Для предотвращения Race Condition) ---
-
 async def acquire_lock(key: str, timeout: int = 60) -> bool:
     """Захватывает эксклюзивный доступ к ресурсу (например, к диалогу)"""
     client = get_redis_client()
@@ -136,7 +126,6 @@ async def release_lock(key: str):
         logger.error(f"❌ Redis Unlock Error: {e}")
 
 # --- 3. RATE LIMITER (Ограничение скорости запросов в сек/мин) ---
-
 class DistributedRateLimiter:
     """Ограничивает ЧАСТОТУ запросов (например, 100 запросов в минуту)"""
     def __init__(self, name: str, limit: int, period: int):
@@ -161,7 +150,7 @@ class DistributedRateLimiter:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass  # Rate limiter не требует очистки после выхода
+        pass  
 
     async def acquire(self):
         logger.debug(f"  [RateLimiter] Проверка лимита '{self.key}' (limit={self.limit})...")

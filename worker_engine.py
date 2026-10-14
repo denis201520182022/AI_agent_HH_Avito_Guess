@@ -18,7 +18,6 @@ async def on_engine_task(message: IncomingMessage):
     Используем ignore_processed=True, чтобы задача не удалялась из очереди при возникновении ошибки.
     """
     async with message.process(ignore_processed=True):
-        # 1. Декодируем сообщение
         log_context.set({})
         try:
             body_raw = message.body.decode()
@@ -28,9 +27,6 @@ async def on_engine_task(message: IncomingMessage):
             await message.reject(requeue=False)
             return
 
-        # 2. Обработка логики
-
-        # 2. УСТАНАВЛИВАЕМ КОНТЕКСТ
         set_log_context(
             dialogue_id=task_data.get('dialogue_id'),
             account_id=task_data.get('account_id'),
@@ -45,20 +41,14 @@ async def on_engine_task(message: IncomingMessage):
             logger.info(f"🧠 [Engine] Обработка ИИ-логики диалога ID: {diag_id} (Платформа: {platform})")
             
             await dispatcher.process_engine_task(task_data)
-            
-            # Если выполнение дошло до этой точки — подтверждаем успех
             await message.ack()
             processed_successfully = True
             
         except DialogueLockedError:
-            # Если диалог заблокирован — просто логируем предупреждение (без алертов в ТГ)
             logger.warning(f"⚠️ [Engine] Диалог {diag_id} заблокирован другим воркером. Пропуск и повтор...")
         except Exception as e:
-            # Логируем ошибку
             error_msg = f"❌ Ошибка в Движке (Engine):\nДиалог ID: `{diag_id}`\nТекст ошибки: {str(e)}"
             logger.exception("❌ Ошибка в Движке (Engine)")
-
-            # --- ОТПРАВКА АЛЕРТА АДМИНАМ ---
             try:
                 await mq.publish("tg_alerts", {
                     "type": "system",
@@ -67,8 +57,6 @@ async def on_engine_task(message: IncomingMessage):
                 })
             except Exception as mq_err:
                 logger.error(f"Не удалось отправить системный алерт из Engine: {mq_err}")
-
-        # --- ВОЗВРАТ В ОЧЕРЕДЬ (Если не обработано) ---
         if not processed_successfully:
             logger.info(f"♻️ Возвращаем задачу диалога {diag_id} в очередь для повторной попытки...")
             await asyncio.sleep(2)
@@ -77,7 +65,6 @@ async def on_engine_task(message: IncomingMessage):
 async def main():
     await mq.connect()
     channel = mq.channel
-    # Оставляем prefetch_count=10, чтобы не перегружать API ИИ
     await channel.set_qos(prefetch_count=10)
 
     engine_queue = await channel.get_queue("engine_tasks")
@@ -91,8 +78,6 @@ async def main():
         loop.add_signal_handler(sig, lambda: stop_event.set())
 
     await stop_event.wait()
-    
-    # Закрытие ресурсов
     await mq.close()
     await engine.dispose()
     await cleanup_llm()

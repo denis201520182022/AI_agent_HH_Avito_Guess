@@ -7,7 +7,6 @@ from typing import List, Dict, Optional, Any
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
 from app.core.config import settings
 from app.core.rabbitmq import mq 
 
@@ -15,14 +14,10 @@ logger = logging.getLogger("gs_reporter")
 
 class GoogleSheetsReporter:
     def __init__(self):
-        # Используем настройки из блока services.google_sheets_report
         self.conf = settings.services.google_sheets_report
         self.spreadsheet_url = self.conf.spreadsheet_url
         self.candidates_sheet = self.conf.candidates_sheet_name
-        
-        # Путь к кредам из .env
         self.creds_path = settings.GOOGLE_CREDENTIALS_JSON
-        
         self.scopes = ['https://www.googleapis.com/auth/spreadsheets']
         self._spreadsheet_id = self._extract_id(self.spreadsheet_url)
 
@@ -64,7 +59,6 @@ class GoogleSheetsReporter:
         """Добавляет строку в общую таблицу кандидатов (Reporting)"""
         try:
             service = await asyncio.to_thread(self._get_service)
-            # Структура строки: ФИО, Телефон, Вакансия, Ссылка, Дата собеса, Статус
             row_values = [
                 data.get("full_name", ""),
                 data.get("phone", ""),
@@ -88,5 +82,4 @@ class GoogleSheetsReporter:
                 {"sheet": self.candidates_sheet, "data": data}
             )
 
-# Глобальный инстанс для использования в воркерах
 gs_reporter = GoogleSheetsReporter()

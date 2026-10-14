@@ -31,7 +31,6 @@ def format_history_txt(dialogue: Dialogue, candidate: Candidate, vacancy: JobCon
         if ts:
             try:
                 dt = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                # Конвертируем в МСК для файла (+3 часа)
                 msk_dt = dt + datetime.timedelta(hours=3)
                 ts_str = msk_dt.strftime('[%H:%M:%S] ')
             except: ts_str = ""
@@ -52,11 +51,8 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
     """
     profile = candidate.profile_data or {}
     tg_settings = account.settings or {}
-    
-    # Приоритет: TG чат директора > TG чат аккаунта
     target_chat_id = None
     
-    # Хакинг: если это отказ, молчун или отмена, принудительно ставим нужный чат
     if event_type in ['cancelled', 'rejected', 'silent']:
         target_chat_id = -1003885660910
         logger.info(f"Принудительная отправка карточки ({event_type}) в чат ID: {target_chat_id}")
@@ -64,7 +60,6 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
         target_chat_id = director.tg_chat_id
         logger.info(f"Отправляю карточку в чат директора '{director.name}' (ID: {target_chat_id})")
     else:
-        # Fallback на старый tg_chat_id из Account.settings
         target_chat_id = tg_settings.get("tg_chat_id")
         if target_chat_id:
             logger.info(f"Отправляю карточку в чат аккаунта '{account.name}' (ID: {target_chat_id})")
@@ -80,15 +75,12 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
         return html.escape(str(text))
     
     meta = dialogue.metadata_json or {}
-    # 1. ОПРЕДЕЛЯЕМ ПЛАТФОРМУ И ССЫЛКУ
     platform_name = account.platform.upper() # 'AVITO' или 'HH'
     
     if account.platform == "avito":
         chat_link = f"https://www.avito.ru/profile/messenger/channel/{dialogue.external_chat_id}"
         link_label = "Открыть чат"
     elif account.platform == "hh":
-        # Извлекаем hh_resume_id из нашего составного ключа (помнишь, мы делали resumeid_vacancyid?)
-        # Либо берем из profile_data, куда мы его заботливо положили в service.py
         resume_id = candidate.profile_data.get("hh_resume_id") or dialogue.candidate.platform_user_id.split('_')[0]
         chat_link = f"https://hh.ru/resume/{resume_id}"
         link_label = "Открыть резюме на HH"
@@ -96,7 +88,6 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
         chat_link = "#"
         link_label = "Чат"
 
-    # === ПЕРЕВОД ЗНАЧЕНИЙ НА РУССКИЙ ===
     emp_type = profile.get('employment_type')
     emp_label = "Полная" if emp_type == "full" else "Частичная" if emp_type == "part" else "—"
     
@@ -144,7 +135,6 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
     # elif emp_type == "full":
     #     message_text += f"🕒 <b>Смена:</b> {esc(shift_label)}\n"
 
-    # Добавляем информацию о собеседовании
     if event_type == 'cancelled':
         message_text += (
             f"\n� <b>Отмененное собеседование:</b> {esc(meta.get('interview_date'))} в {esc(meta.get('interview_time'))}\n"
@@ -171,7 +161,7 @@ async def send_tg_notification(bot: Bot, dialogue: Dialogue, candidate: Candidat
             chat_id=target_chat_id,
             document=document,
             caption=message_text,
-            parse_mode="HTML"  # Указываем HTML вместо MarkdownV2
+            parse_mode="HTML"
         )
         logger.info(
             "✅ Карточка отправлена в TG",

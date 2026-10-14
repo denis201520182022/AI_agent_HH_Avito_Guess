@@ -16,7 +16,6 @@ async def on_avito_inbound(message: IncomingMessage):
     Используем ignore_processed=True для ручного управления подтверждением (ACK/NACK).
     """
     async with message.process(ignore_processed=True):
-        # 1. Сначала пытаемся распарсить JSON
         log_context.set({})
         try:
             body = json.loads(message.body.decode())
@@ -24,8 +23,6 @@ async def on_avito_inbound(message: IncomingMessage):
             logger.error("❌ Критическая ошибка: Некорректный JSON в очереди avito_inbound. Сообщение отброшено.")
             await message.reject(requeue=False)
             return
-
-        # 2. Обрабатываем событие
         try:
             set_log_context(
                 source=body.get("source"),
@@ -34,16 +31,11 @@ async def on_avito_inbound(message: IncomingMessage):
             )
             logger.info(f"📥 [Connector] Унификация события от Avito (Source: {body.get('source')})")
             await avito_connector.process_avito_event(body)
-
-            # Если всё прошло успешно - подтверждаем выполнение
             await message.ack()
 
         except Exception as e:
-            # Логируем ошибку
             error_msg = f"❌ Ошибка в Унификаторе (Avito):\n{str(e)}"
             logger.exception("❌ Ошибка при унификации события Avito")
-
-            # --- ОТПРАВКА АЛЕРТА В TG ВОРКЕР (твоя исходная логика) ---
             try:
                 alert_payload = {
                     "type": "system",
@@ -53,9 +45,6 @@ async def on_avito_inbound(message: IncomingMessage):
                 await mq.publish("tg_alerts", alert_payload)
             except Exception as amqp_err:
                 logger.error(f"Не удалось отправить алерт в очередь: {amqp_err}")
-
-            # --- ВОЗВРАТ В ОЧЕРЕДЬ ---
-            # Делаем небольшую паузу, чтобы не перегружать систему мгновенными повторами при сбое БД
             logger.info("♻️ Возвращаем задачу в очередь RabbitMQ (requeue=True)...")
             await asyncio.sleep(1)
             await message.nack(requeue=True)
@@ -75,18 +64,13 @@ async def on_hh_inbound(message: IncomingMessage):
             return
 
         try:
-            # ИСПРАВЛЕНИЕ: Берем account_id, так как поллер шлет его
             set_log_context(
                 source=body.get("source"),
                 account_id=body.get("account_id"),
                 folder=body.get("folder")
             )
             
-            # logger.info(f"📥 [Connector] Унификация события от HH (Source: {body.get('source')})")
-            
-            # Наш сервис уже готов принимать этот body
             await hh_connector.process_hh_event(body)
-
             await message.ack()
 
         except Exception as e:
@@ -109,7 +93,6 @@ async def on_hh_inbound(message: IncomingMessage):
 async def main():
     await mq.connect()
     channel = mq.channel
-    # Снизили prefetch_count до 15, чтобы не превышать лимиты подключений к БД
     await channel.set_qos(prefetch_count=15)
 
     # === AVITO QUEUE ===

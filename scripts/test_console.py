@@ -4,8 +4,6 @@ import asyncio
 import datetime
 import uuid
 import json
-
-# Позволяет импортировать модули из app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
@@ -101,14 +99,11 @@ async def chat_loop(chat_id: str):
     
     while True:
         text = await asyncio.to_thread(input, "Вы: ")
-        
-        # Очистка от битых суррогатных символов (которые может вернуть консоль Windows)
         import re
         text = re.sub(r'[\ud800-\udfff]', '', text)
         
         if text.strip().lower() in ['quit', 'exit']:
             print("Завершение работы...")
-            # Выход из программы
             os._exit(0)
             
         if not text.strip():
@@ -119,8 +114,6 @@ async def chat_loop(chat_id: str):
             if not dialogue:
                 print("Диалог не найден!")
                 continue
-
-            # Добавляем сообщение в историю
             new_msg = {
                 "message_id": str(uuid.uuid4()),
                 "role": "user",
@@ -133,14 +126,10 @@ async def chat_loop(chat_id: str):
             dialogue.history = history
             dialogue.last_message_at = datetime.datetime.now(datetime.timezone.utc)
             await db.commit()
-
-            # Отправляем триггер в engine
             await mq.publish("engine_tasks", {
                 "dialogue_id": dialogue.id,
                 "trigger": "console_test"
             })
-            
-            # Ждем ответ... выведет слушатель `listen_bot_responses`
 
 
 async def main():
@@ -151,11 +140,7 @@ async def main():
     
     try:
         await setup_test_data(chat_id)
-        
-        # Запускаем фоновый слушатель ответов
         asyncio.create_task(listen_bot_responses(chat_id))
-        
-        # Запускаем ввод пользователя
         await chat_loop(chat_id)
         
     except Exception as e:

@@ -9,23 +9,17 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-
 from app.core.config import settings
 from app.core.rabbitmq import mq
 from app.db.session import AsyncSessionLocal
 from app.db.models import Dialogue, Director, JobContext
 from app.utils.logger import logger, set_log_context, log_context
 from app.utils.tg_alerts import handle_alert_task
-
-# Импортируем инструменты вывода
 from app.output_chanels.telegram.tg_cards import send_tg_notification
 from app.output_chanels.google_sheets.gs_card import gs_reporter
-
-# Импорты для работы ТГ-бота
 from app.tg_bot.handlers import router as main_router
 from app.tg_bot.middlewares import DbSessionMiddleware
 
-# Настраиваем прокси-сессию для бота
 PROXY_HOST = os.getenv("SQUID_PROXY_HOST")
 PROXY_PORT = os.getenv("SQUID_PROXY_PORT")
 PROXY_USER = os.getenv("SQUID_PROXY_USER")
@@ -41,12 +35,9 @@ if PROXY_HOST and PROXY_PORT:
     bot_session = AiohttpSession(proxy=proxy_url)
     logging.info(f"Бот запущен через прокси: {host}:{port}")
 
-# Инициализация ТГ-бота
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, session=bot_session) if bot_session else Bot(token=settings.TELEGRAM_BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
-
-# Регистрируем мидлварь для базы данных и подключаем роутеры
 dp.update.middleware(DbSessionMiddleware(AsyncSessionLocal))
 dp.include_router(main_router)
 
@@ -59,7 +50,6 @@ async def handle_reporting_task(message_body: dict):
     event_type = message_body.get("type", "qualified")
     
     async with AsyncSessionLocal() as db:
-        # Загружаем диалог со всеми связями
         stmt = (
             select(Dialogue)
             .where(Dialogue.id == dialogue_id)
@@ -79,14 +69,8 @@ async def handle_reporting_task(message_body: dict):
         candidate = dialogue.candidate
         vacancy = dialogue.vacancy
         account = dialogue.account
-
-        # Получаем директора через связь с вакансией
         director = vacancy.director if vacancy and vacancy.director else None
-        
         meta = dialogue.metadata_json or {}
-
-        # --- ЗАДЕРЖКА (Race Condition Protection) ---
-        # Оставляем 10 секунд, чтобы база точно успела обновиться всеми воркерами
         await asyncio.sleep(10)
 
         results = []
@@ -112,7 +96,6 @@ async def handle_reporting_task(message_body: dict):
                         results.append("Telegram ✅")
                     else:
                         results.append("Telegram ❌")
-                # Здесь можно добавить другие типы карточек (reject_cards, molchun_cards)
                 elif event_type in ['rejected', 'silent'] and settings.services.telegram.interview_cards:
                     success = await send_tg_notification(bot, dialogue, candidate, vacancy, account, director, event_type=event_type)
                     if success:
@@ -123,7 +106,6 @@ async def handle_reporting_task(message_body: dict):
             # 2. КАНАЛ: GOOGLE SHEETS (Отчеты)
             if settings.services.google_sheets_report.enabled:
                 if event_type == 'qualified':
-                    # ГЕНЕРИРУЕМ ССЫЛКУ ЗАВИСИМО ОТ ПЛАТФОРМЫ
                     if account.platform == 'avito':
                         link = f"https://www.avito.ru/profile/messenger/channel/{dialogue.external_chat_id}"
                     elif account.platform == 'hh':
@@ -168,16 +150,13 @@ async def run_alerts_consumer():
                     )
                     await handle_alert_task(payload)
                 except json.JSONDecodeError:
-                    # Если пришел мусор вместо JSON - нет смысла возвращать, удаляем
                     logger.error("❌ Получен некорректный JSON в алертах, сообщение отброшено.")
                     await message.reject(requeue=False)
 
                 except Exception as e:
                     logger.exception("💥 Ошибка обработки системного алерта")
                     logger.info("♻️ Возвращаем сообщение в очередь (NACK)...")
-                    # ВОТ ОНО: Возвращаем в очередь
                     await message.nack(requeue=True)
-                    # Добавляем небольшую паузу, чтобы не спамить логами, если сервис лежит
                     await asyncio.sleep(1)
 
 async def run_services_consumer():
@@ -210,15 +189,12 @@ async def run_services_consumer():
 async def main():
     """Основной цикл запуска воркера"""
     await mq.connect()
-    
-    # Запускаем консьюмеры RabbitMQ задачами
     alerts_task = asyncio.create_task(run_alerts_consumer())
     services_task = asyncio.create_task(run_services_consumer())
     
     logger.info("🚀 [worker_services] & Interactive Bot стартуют...")
     
     try:
-        # Запускаем поллинг ТГ-бота (drop_pending_updates=True чтобы не отвечать на старье)
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:

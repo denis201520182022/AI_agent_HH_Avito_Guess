@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class RabbitMQManager:
     def __init__(self):
-        # Используем URL из наших новых настроек
         self.url = settings.RABBITMQ_URL
         self.connection = None
         self.channel = None
@@ -19,8 +18,6 @@ class RabbitMQManager:
             try:
                 self.connection = await aio_pika.connect_robust(self.url)
                 self.channel = await self.connection.channel()
-                
-                # --- ОБЪЯВЛЯЕМ ОЧЕРЕДИ ---
 
                 # === ВХОДЯЩИЕ СОБЫТИЯ ОТ ПЛАТФОРМ (Универсальная точка входа) ===
                 # Avito
@@ -63,5 +60,4 @@ class RabbitMQManager:
             await self.connection.close()
             logger.info("🔌 Соединение с RabbitMQ закрыто.")
 
-# Глобальный экземпляр для импорта
 mq = RabbitMQManager()

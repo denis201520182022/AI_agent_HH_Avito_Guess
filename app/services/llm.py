@@ -9,10 +9,8 @@ from dotenv import load_dotenv
 import httpx
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
-
 from app.core.config import settings
 from app.core.rabbitmq import mq
-# Предполагаем, что этот путь будет таким (реализуем в след. файле)
 from app.utils.redis_lock import DistributedSemaphore, close_redis
 
 load_dotenv()
@@ -29,10 +27,8 @@ TEMPERATURE=settings.llm.temperature
 request_timeout=settings.llm.request_timeout
 
 
-# Лимит одновременных запросов (чтобы не ловить Rate Limit от OpenAI)
 GLOBAL_LLM_LIMIT = settings.llm.global_concurrency
 
-# --- НАСТРОЙКА ПРОКСИ ---
 SQUID_HOST = os.getenv("SQUID_PROXY_HOST")
 SQUID_PORT = os.getenv("SQUID_PROXY_PORT")
 SQUID_USER = os.getenv("SQUID_PROXY_USER")
@@ -113,12 +109,8 @@ async def get_bot_response(
 
     diag_id = (extra_context or {}).get("dialogue_id", "unknown")
     ctx_logger = logging.LoggerAdapter(logger, extra_context or {})
-    
-    # Добавляем в системный промпт текущее время (важно для дат)
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_system_prompt = f"{system_prompt}\n\nCurrent time: {now_str}"
-
-    # --- [ОБНОВЛЕНО] ДУБЛИРОВАНИЕ ТОЛЬКО ПОСЛЕДНИХ СИСТЕМНЫХ КОМАНД ---
     system_commands_to_duplicate = []
     
     # 1. Проверяем только последнее сообщение в истории
@@ -177,7 +169,6 @@ async def get_bot_response(
                 f.write(f"{'='*40}\n")
         except Exception as eval_err:
             logger.error(f"Failed to write file log: {eval_err}")
-        # -----------------------------
 
         ctx_logger.info(
             f"✅ LLM Response. [Action: llm_response_success] "
@@ -192,9 +183,6 @@ async def get_bot_response(
     except Exception as e:
         error_name = type(e).__name__
         ctx_logger.warning(f"⚠️ [Action: llm_request_retry] Error: {error_name}: {e}")
-        
-        # Если это последняя попытка (retry провалился 3 раза)
-        # Tenacity выбросит исключение дальше, но мы успеем отправить алерт
         if attempt_tracker and len(attempt_tracker) >= 3:
             await send_llm_alert(f"Final Retry Failed ({MAIN_MODEL})", str(e), diag_id)
             
@@ -223,8 +211,6 @@ async def get_smart_bot_response(
     
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_system_prompt = f"{system_prompt}\nContext time: {now_str}"
-
-    # --- [ОБНОВЛЕНО] ДУБЛИРОВАНИЕ ТОЛЬКО ПОСЛЕДНИХ СИСТЕМНЫХ КОМАНД ---
     system_commands_to_duplicate = []
     
     # 1. Проверяем только последнее сообщение в истории

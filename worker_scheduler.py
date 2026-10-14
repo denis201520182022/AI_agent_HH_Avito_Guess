@@ -33,8 +33,6 @@ class Scheduler:
     async def start(self):
         logger.info("🚀 [worker_scheduler] запущен")
         await mq.connect()
-
-        # Запускаем параллельные циклы
         await asyncio.gather(
             self._loop_silence_reminders(),      # Напоминания молчунам
             self._loop_interview_reminders(),    # Напоминания перед собесом
@@ -64,14 +62,12 @@ class Scheduler:
 
                 async with AsyncSessionLocal() as db:
                     now_utc = datetime.datetime.now(datetime.timezone.utc)
-                
-                    # 1. МЕНЯЕМ ЗАПРОС: добавляем .vacancy в selectinload
                     stmt = (
                         select(Dialogue)
                         .join(JobContext)
                         .options(
                             selectinload(Dialogue.candidate),
-                            selectinload(Dialogue.vacancy)  # <--- ДОБАВИТЬ ЭТУ СТРОКУ
+                            selectinload(Dialogue.vacancy)
                         )
                         .where(
                             and_(
@@ -87,8 +83,6 @@ class Scheduler:
                     for dialogue in dialogues:
                         log_context.set({})
                         set_log_context(dialogue_id=dialogue.id, task="silence_reminder")
-                        
-                        # --- А. ЧАСОВОЙ ПОЯС И ТИХИЙ ЧАС ---
                         profile = dialogue.candidate.profile_data or {}
                         tz_name = profile.get("timezone", qt_cfg.default_timezone)
                         try:
@@ -107,8 +101,6 @@ class Scheduler:
                                 if start_q <= now_candidate <= end_q: is_quiet = True
                             
                             if is_quiet: continue
-
-                        # --- Б. ПРОВЕРКА ВРЕМЕНИ МОЛЧАНИЯ ---
                         if not dialogue.history or dialogue.history[-1].get("role") != "assistant":
                             continue
                         
@@ -118,16 +110,12 @@ class Scheduler:
                         current_level = dialogue.reminder_level
 
                         # --- В. ЛОГИКА ПЕРЕКЛЮЧЕНИЯ ---
-                        
-                        # ВАРИАНТ 1: Еще есть напоминания в запасе
                         if current_level < max_levels:
                             reminder_cfg = settings.reminders.silence.levels[current_level]
                             
                             if silence_minutes >= reminder_cfg.delay_minutes:
                                 new_level = current_level + 1
                                 logger.info(f"⏰ Напоминание ур.{new_level} для диалога {dialogue.id}")
-                                
-                                # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ ID
                                 task_uuid = str(uuid.uuid4())
 
                                 await mq.publish("engine_tasks", {
@@ -136,27 +124,20 @@ class Scheduler:
                                     "reminder_text": reminder_cfg.text,
                                     "new_level": new_level,
                                     "stop_bot": False,
-                                    "correlation_id": task_uuid, # Добавили
-                                    "initial_msg_count": 0       # Добавили
+                                    "correlation_id": task_uuid, 
+                                    "initial_msg_count": 0   
                                 })
                                 dialogue.reminder_level = new_level
-
-                        # ВАРИАНТ 2: Все напоминания отправлены, ждем финальные 30 минут
                         elif current_level == max_levels:
-                            if silence_minutes >= 30: # <--- Тот самый порог 30 минут
+                            if silence_minutes >= 30: 
                                 logger.info(f"💤 Диалог {dialogue.id} официально признан молчуном (30 мин после финала)")
                                 
                                 dialogue.status = 'timed_out'
-                                # Ставим уровень выше максимума, чтобы запрос его больше не цеплял
                                 dialogue.reminder_level = max_levels + 1 
-                                
-                                # Отправляем сигнал в очередь отчетности
                                 await mq.publish("services_output", {
                                     "dialogue_id": dialogue.id,
                                     "type": "silent"
                                 })
-                                
-                                # Пишем в аналитику
                                 await log_event(
                                     db=db,
                                     dialogue=dialogue,
@@ -180,8 +161,6 @@ class Scheduler:
     # --- 2. НАПОМИНАНИЯ ПЕРЕД СОБЕСЕДОВАНИЕМ ---
     async def _loop_interview_reminders(self):
         """Проверка таблицы InterviewReminder и отправка напоминаний"""
-         # Убедись, что этот импорт есть в начале файла
-        
         while self.is_running:
             try:
                 # 1. Проверяем, включены ли напоминания в конфиге
@@ -191,12 +170,10 @@ class Scheduler:
 
                 async with AsyncSessionLocal() as db:
                     now_utc = datetime.datetime.now(datetime.timezone.utc)
-                    
-                    # Загружаем напоминания, которые пора отправить
                     stmt = (
                         select(InterviewReminder)
-                        .join(Dialogue)    # Соединяем с диалогами
-                        .join(JobContext)  # Соединяем с вакансиями
+                        .join(Dialogue)   
+                        .join(JobContext) 
                         .options(
                             selectinload(InterviewReminder.dialogue)
                             .selectinload(Dialogue.vacancy)
@@ -205,7 +182,7 @@ class Scheduler:
                             and_(
                                 InterviewReminder.status == 'pending',
                                 InterviewReminder.scheduled_at <= now_utc,
-                                JobContext.is_active == True # <--- ДОБАВЛЕНО: если вакансия закрыта, напоминание не шлем
+                                JobContext.is_active == True 
                             )
                         )
                     )
@@ -219,7 +196,6 @@ class Scheduler:
                             reminder_type=rem.reminder_type,
                             task="interview_reminder"
                         )
-                        # 2. Ищем конфиг по ID (теперь через поиск в списке items)
                         reminder_cfg = next(
                             (item for item in settings.reminders.interview.items if item.id == rem.reminder_type), 
                             None
@@ -227,19 +203,15 @@ class Scheduler:
                         
                         if not reminder_cfg:
                             logger.warning(f"⚠️ Конфигурация для напоминания '{rem.reminder_type}' не найдена в config.yaml")
-                            rem.status = 'error' # Помечаем ошибкой, чтобы не крутилось вечно
+                            rem.status = 'error' 
                             continue
 
                         if rem.dialogue:
                             dialogue = rem.dialogue
                             vacancy_title = dialogue.vacancy.title if dialogue.vacancy else "Вакансия"
-                            
-                            # 3. Достаем данные из метаданных (которые сохранил Engine)
                             meta = dialogue.metadata_json or {}
                             i_date_raw = meta.get("interview_date", "не указана")
                             i_time = meta.get("interview_time", "не указано")
-
-                            # Красивое форматирование даты (из 2026-02-15 в 15.02.2026)
                             display_date = i_date_raw
                             try:
                                 if i_date_raw != "не указана":
@@ -247,25 +219,18 @@ class Scheduler:
                                     display_date = dt_obj.strftime("%d.%m.%Y")
                             except:
                                 pass
-
-                            # 4. Форматируем текст
                             try:
                                 formatted_text = reminder_cfg.text.format(
                                     interview_date=display_date,
                                     interview_time=i_time,
                                     vacancy_title=vacancy_title
-                                )
-                                
-                                # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ ID
                                 task_uuid = str(uuid.uuid4())
-
-                                # 5. Публикуем в Engine для отправки
                                 await mq.publish("engine_tasks", {
                                     "dialogue_id": rem.dialogue_id,
                                     "trigger": "reminder",
                                     "reminder_text": formatted_text,
-                                    "correlation_id": task_uuid, # Добавили
-                                    "initial_msg_count": 0       # Добавили
+                                    "correlation_id": task_uuid,
+                                    "initial_msg_count": 0   
                                 })
                                 
                                 rem.status = 'sent'
@@ -287,7 +252,7 @@ class Scheduler:
                     })
                 except: pass
             
-            await asyncio.sleep(30) # Проверка каждые 30 секунд
+            await asyncio.sleep(30)
 
     # --- 4. АКТИВНЫЙ ПОИСК КАНДИДАТОВ (UNIVERSAL) ---
     async def _loop_outbound_search(self):
@@ -345,7 +310,6 @@ class Scheduler:
             except Exception as e:
                 error_msg = f"❌ Ошибка обновления базы знаний (Google Docs):\n{str(e)}"
                 logger.exception("❌ Ошибка обновления базы знаний")
-                # Отправка алерта
                 try:
                     await mq.publish("tg_alerts", {
                         "type": "system",

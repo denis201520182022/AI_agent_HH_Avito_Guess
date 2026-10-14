@@ -12,5 +12,4 @@ class GoogleSyncSearchHHService:
         logger.debug("Синхронизация поиска HH: функционал в разработке.")
         pass
 
-# Создаем экземпляр, который ожидает scheduler
 google_sync_search_hh_service = GoogleSyncSearchHHService()

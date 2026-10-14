@@ -8,14 +8,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile
 from sqlalchemy import select
-
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.db.models import TelegramUser
 
 logger = logging.getLogger(__name__)
 
-# Настраиваем прокси-сессию для алертов
 _PROXY_HOST = os.getenv("SQUID_PROXY_HOST")
 _PROXY_PORT = os.getenv("SQUID_PROXY_PORT")
 _PROXY_USER = os.getenv("SQUID_PROXY_USER")
@@ -30,7 +28,6 @@ if _PROXY_HOST and _PROXY_PORT:
     proxy_url = f"http://{user}:{password}@{host}:{port}"
     _alert_session = AiohttpSession(proxy=proxy_url)
 
-# Твой персональный ID для технических алертов
 MY_TECH_ADMIN_ID = 1975808643
 
 def esc(text: Any) -> str:
@@ -41,14 +38,12 @@ async def _get_recipients(alert_type: str) -> list[int]:
     """
     Определяет список получателей.
     """
-    # Если это баланс или общая рассылка — берем всех из БД
     if alert_type in ["balance", "all"]:
         async with AsyncSessionLocal() as session:
             stmt = select(TelegramUser.telegram_id)
             result = await session.execute(stmt)
             return list(result.scalars().all())
     
-    # Во всех остальных случаях (технические алерты, ошибки) — только ТЫ
     return [MY_TECH_ADMIN_ID]
 
 async def send_system_alert(message_text: str, alert_type: str = "admin_only"):

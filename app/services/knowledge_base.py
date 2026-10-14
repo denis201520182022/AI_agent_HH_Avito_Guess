@@ -152,7 +152,6 @@ class KnowledgeBaseService:
             
             return {}
 
-# Экземпляр сервиса
 kb_service = KnowledgeBaseService()
 
 

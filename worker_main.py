@@ -12,9 +12,7 @@ import uuid
 from app.utils.logger import logger, set_log_context, log_context
 
 
-# --- Отключаем лишние логи HTTP-клиента ---
 logging.getLogger("httpx").setLevel(logging.WARNING)
-
 
 async def init_dal_accounts():
     """
@@ -27,7 +25,6 @@ async def init_dal_accounts():
     import datetime
 
     async with AsyncSessionLocal() as db:
-        # 1. Аккаунт для Talantix API (OAuth)
         stmt_api = select(Account).where(Account.platform == "talantix_api")
         result_api = await db.execute(stmt_api)
         talantix_oauth_account = result_api.scalar_one_or_none()
@@ -81,10 +78,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 [worker_main] Запуск HR-платформы...")
 
     try:
-        # 1. Подключаемся к RabbitMQ
         await mq.connect()
-        
-        # 2. Инициализируем системные аккаунты (Talantix и др.)
         await init_dal_accounts()
         
     except Exception as e:
@@ -123,8 +117,6 @@ async def lifespan(app: FastAPI):
 
     # --- ДЕЙСТВИЯ ПРИ ОСТАНОВКЕ ---
     logger.info("🛑 [worker_main] Остановка приложения...")
-
-    # Останавливаем коннекторы
     if settings.platforms.avito.enabled:
         await avito_connector.stop()
         await avito.close()
@@ -132,14 +124,10 @@ async def lifespan(app: FastAPI):
     if settings.platforms.hh.enabled:
         await hh_connector.stop()
         await hh.close()
-
-    # Закрываем соединение с очередью
     await mq.close()
 
     logger.info("👋 [worker_main] Бот полностью остановлен")
 
-
-# Инициализация FastAPI
 app = FastAPI(
     title="AI HR Platform",
     version="2.0.0",
@@ -183,12 +171,8 @@ async def avito_webhook_handler(
         payload = await request.json()
     except Exception:
         return Response(status_code=400)
-
-    # 1. Проверка на пустой запрос
     if not payload:
         return Response(status_code=200)
-
-    # 2. Проверка безопасности (X-Secret)
     expected_secret = settings.AVITO_WEBHOOK_SECRET
     if x_secret and expected_secret and x_secret != expected_secret:
         error_msg = f"⚠️ Ошибка настроек! Неверный X-Secret от IP: {request.client.host}"

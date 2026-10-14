@@ -1,5 +1,4 @@
 # tg_bot/handlers/admin.py
-
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -44,7 +43,6 @@ router.message.filter(AdminFilter())
 router.callback_query.filter(AdminFilter())
 
 # --- FSM Состояния ---
-
 class UserManagement(StatesGroup):
     add_id = State()
     add_name = State()
@@ -53,7 +51,6 @@ class UserManagement(StatesGroup):
 
 class AccountManagement(StatesGroup):
     """Управление аккаунтами (универсально: Avito + HH)"""
-    # Общие состояния
     add_platform = State()
     add_name = State()
     add_tg_chat_id = State()
@@ -86,7 +83,6 @@ class SettingsManagement(StatesGroup):
     set_search_balance = State()
 
 # --- Обработчики отмены ---
-
 @router.message(Command("cancel"))
 @router.message(F.text.casefold() == "отмена")
 async def cancel_command_handler(message: Message, state: FSMContext):
@@ -104,10 +100,6 @@ async def cancel_callback_handler(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # --- УПРАВЛЕНИЕ БАЛАНСОМ И ТАРИФАМИ ---
-
-
-# tg_bot/handlers/admin.py (ВАШ ФАЙЛ)
-
 # 1. Основное меню Баланса и Тарифов
 @router.message(F.text == "⚙️ Баланс и Тариф")
 async def limits_menu(message: Message, session: AsyncSession):
@@ -116,7 +108,6 @@ async def limits_menu(message: Message, session: AsyncSession):
         await message.answer("❌ Не удалось загрузить настройки.")
         return
 
-    # Краткий статус поиска для раздела "Поиск резюме"
     status_stmt = select(SearchStatus).options(joinedload(SearchStatus.account))
     statuses = (await session.execute(status_stmt)).scalars().all()
 
@@ -142,8 +133,6 @@ async def limits_menu(message: Message, session: AsyncSession):
         
         "🔔 Порог когда придет оповещение о низком балансе: ", Bold(f"{settings.low_balance_threshold:.2f}"), " руб."
     )
-
-    # Клавиатура с тремя кнопками
     kb = InlineKeyboardBuilder()
     kb.button(text="⚙️ Установить баланс", callback_data="set_limit")
     kb.button(text="💰 Установить тарифы", callback_data="set_tariff")
@@ -153,19 +142,13 @@ async def limits_menu(message: Message, session: AsyncSession):
     await message.answer(**content.as_kwargs(), reply_markup=kb.as_markup())
 
 
-# 2. Меню управления поиском (вызывается кнопкой "🔎 Управление поиском")
 @router.callback_query(F.data == "manage_search")
 async def manage_search_menu(callback: CallbackQuery, session: AsyncSession):
-    # Получаем все аккаунты и их статусы
     acc_stmt = select(Account)
     accounts = (await session.execute(acc_stmt)).scalars().all()
-    
-    # Получаем существующие статусы
     status_stmt = select(SearchStatus)
     statuses = (await session.execute(status_stmt)).scalars().all()
     status_map = {s.account_id: s.is_enabled for s in statuses}
-
-    # Формируем ссылки на таблицы из конфига для каждой платформы
     platform_links = []
     if settings.platforms.avito.enabled and settings.platforms.avito.outbound_search.spreadsheet_url:
         platform_links.append(f"🟠 <a href='{settings.platforms.avito.outbound_search.spreadsheet_url}'>Avito</a>")
@@ -198,22 +181,16 @@ async def manage_search_menu(callback: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data.startswith("toggle_search_"))
 async def toggle_search_status(callback: CallbackQuery, session: AsyncSession):
     acc_id = int(callback.data.split("_")[-1])
-    
-    # Ищем статус в БД
     stmt = select(SearchStatus).filter_by(account_id=acc_id)
     status = (await session.execute(stmt)).scalar_one_or_none()
     
     if not status:
-        # Если записи нет — создаем (по умолчанию выключен, нажатие включает)
         status = SearchStatus(account_id=acc_id, is_enabled=True)
         session.add(status)
     else:
-        # Инвертируем состояние
         status.is_enabled = not status.is_enabled
     
     await session.commit()
-    
-    # Обновляем это же меню, чтобы кнопка сразу изменилась
     await manage_search_menu(callback, session)
     await callback.answer("Статус поиска изменен")
 
@@ -221,12 +198,9 @@ async def toggle_search_status(callback: CallbackQuery, session: AsyncSession):
 # 4. Возврат в основное меню
 @router.callback_query(F.data == "back_to_limits")
 async def back_to_limits(callback: CallbackQuery, session: AsyncSession):
-    # Просто вызываем функцию основного меню, но передаем callback.message
-    await callback.message.delete() # Удаляем старое, чтобы не дублировать
+    await callback.message.delete() 
     await limits_menu(callback.message, session)
     await callback.answer()
-
-
 
 @router.callback_query(F.data == "set_limit")
 async def start_set_balance(callback: CallbackQuery, state: FSMContext):
@@ -270,12 +244,8 @@ async def process_set_cost_dialogue(message: Message, state: FSMContext, session
         stmt = select(AppSettings).where(AppSettings.id == 1)
         result = await session.execute(stmt)
         settings = result.scalar_one()
-        
-        # Обновляем значение в JSONB словаре
         if settings.costs is None: settings.costs = {}
         settings.costs["dialogue"] = val
-        
-        # Сообщаем SQLAlchemy, что JSON поле изменилось
         flag_modified(settings, "costs")
         
         await session.commit()
@@ -284,10 +254,6 @@ async def process_set_cost_dialogue(message: Message, state: FSMContext, session
     except Exception as e:
         logger.error(f"Ошибка при смене тарифа: {e}")
         await message.answer("❌ Ошибка в числе. Попробуйте еще раз.")
-
-
-
-
 
 
 
@@ -312,8 +278,6 @@ async def user_management_menu(message: Message, session: AsyncSession):
             
     content_parts.append("\nВыберите действие:")
     content = Text(*content_parts)
-    
-    # Клавиатура управления (кнопки "Добавить" и "Удалить")
     await message.answer(
         **content.as_kwargs(), 
         reply_markup=create_management_keyboard([], "add_user", "del_user")
@@ -334,8 +298,6 @@ async def process_add_user_id(message: Message, state: FSMContext, session: Asyn
         return
     
     user_id = int(message.text)
-    
-    # Проверка на существование
     stmt = select(TelegramUser).where(TelegramUser.telegram_id == user_id)
     result = await session.execute(stmt)
     if result.scalar_one_or_none():
@@ -397,8 +359,6 @@ async def process_del_user_id(message: Message, state: FSMContext, session: Asyn
         return
         
     user_id_to_delete = int(message.text)
-    
-    # Не даем удалить самого себя
     if message.from_user.id == user_id_to_delete:
         await message.answer("🤔 Вы не можете удалить самого себя. Действие отменено.")
         await state.clear()
@@ -559,8 +519,6 @@ async def process_add_tg_chat_final(message: Message, state: FSMContext, session
 
     data = await state.get_data()
     platform = data.get('platform', 'avito')
-
-    # Формируем auth_data в зависимости от платформы
     if platform == 'avito':
         auth_data = {
             "client_id": data['avito_client_id'],
@@ -647,18 +605,12 @@ async def secret_dump_handler(message: Message, session: AsyncSession):
     Выгружает сырой лог диалога из БД в текстовый файл.
     Использование: /dump_dialogue [external_chat_id]
     """
-    # Замените ID на свой, если нужно ограничить доступ
-    # if message.from_user.id != 1975808643:
-    #     return
-
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: `/dump_dialogue [external_chat_id]`", parse_mode="Markdown")
         return
 
     chat_id = args[1]
-
-    # Ищем диалог по external_chat_id (avito_chat_id или hh_response_id)
     stmt = select(Dialogue).where(Dialogue.external_chat_id == chat_id)
     result = await session.execute(stmt)
     dialogue = result.scalar_one_or_none()
@@ -666,12 +618,8 @@ async def secret_dump_handler(message: Message, session: AsyncSession):
     if not dialogue:
         await message.answer(f"❌ Диалог с ID `{chat_id}` не найден.")
         return
-
-    # Определяем платформу для заголовка
     platform = dialogue.account.platform if dialogue.account else "unknown"
     platform_name = "AVITO" if platform == "avito" else "HH" if platform == "hh" else "UNKNOWN"
-
-    # Формируем текстовый лог
     log_content = []
     log_content.append(f"=== ПОЛНЫЙ ДАМП ДИАЛОГА ({platform_name}) ===")
     log_content.append(f"External Chat ID: {dialogue.external_chat_id}")
@@ -683,29 +631,20 @@ async def secret_dump_handler(message: Message, session: AsyncSession):
     stats = dialogue.usage_stats or {}
     log_content.append(f"Usage: {stats.get('tokens', 0)} tokens (${stats.get('total_cost', 0)})")
     log_content.append("="*35 + "\n")
-
-    # 1. Обрабатываем основную историю из JSONB
     history = dialogue.history or []
     for msg in history:
         role = str(msg.get('role', 'unknown')).upper()
-        # В авито-боте мы обычно храним время в timestamp_utc
         ts = msg.get('timestamp_utc', 'no_time')
         content = msg.get('content', '')
-
-        # Инфо о состоянии, если оно сохранялось в историю
         state_info = f" [State: {msg.get('state')}]" if msg.get('state') else ""
-
         log_content.append(f"[{ts}] [{role}]{state_info}")
         log_content.append(f"TEXT: {content}")
-
-        # Если есть извлеченные данные (результат скрининга)
         ext = msg.get('extracted_data')
         if ext:
             log_content.append(f"EXTRACTED DATA: {ext}")
 
         log_content.append("-" * 25)
 
-    # 2. Метаданные диалога (результаты квалификации)
     meta = dialogue.metadata_json or {}
     if meta:
         log_content.append("\n" + "#"*10 + " METADATA " + "#"*10)
@@ -714,7 +653,6 @@ async def secret_dump_handler(message: Message, session: AsyncSession):
 
     final_text = "\n".join(log_content)
 
-    # Создаем и отправляем файл
     file_buffer = io.BytesIO(final_text.encode('utf-8'))
     input_file = BufferedInputFile(file_buffer.getvalue(), filename=f"dump_dialogue_{chat_id}.txt")
 

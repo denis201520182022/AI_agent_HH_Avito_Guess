@@ -2,15 +2,14 @@
 import logging
 import asyncio
 import json
-# app/core/engine.py (в секции импортов)
 from app.utils.pii_masker import extract_and_mask_pii
 from sqlalchemy import select, update, delete
 import datetime
 from app.services.sheets import sheets_service
 import time
-from app.utils.redis_lock import acquire_lock, release_lock, get_redis_client # Добавь get_redis_client
-from sqlalchemy import select, update, delete # Добавили delete
-from app.db.models import Dialogue, Candidate, JobContext, Account, LlmLog, AnalyticsEvent, Director, InterviewReminder, InterviewFollowup # Добавили AnalyticsEvent, Director
+from app.utils.redis_lock import acquire_lock, release_lock, get_redis_client 
+from sqlalchemy import select, update, delete 
+from app.db.models import Dialogue, Candidate, JobContext, Account, LlmLog, AnalyticsEvent, Director, InterviewReminder, InterviewFollowup
 from app.core.rabbitmq import mq
 from typing import Dict, Any, List, Optional
 from decimal import Decimal
@@ -18,23 +17,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from app.services.sheets import sheets_service
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from decimal import Decimal
-from sqlalchemy import select, update, delete # Добавить delete
-from app.db.models import Dialogue, Candidate, JobContext, Account, LlmLog, AnalyticsEvent # Добавить AnalyticsEvent
+from sqlalchemy import select, update, delete 
+from app.db.models import Dialogue, Candidate, JobContext, Account, LlmLog, AnalyticsEvent 
 from app.connectors import get_connector
 from app.connectors.hh import hh_connector, hh
 from app.output_chanels.talantix.talantix_crm import talantix_crm_service
 from app.services.talantix_service import talantix_service
-# Наши модули
 from app.utils.analytics import log_event
 from app.utils.redis_lock import acquire_lock, release_lock
 from app.db.session import AsyncSessionLocal
 from app.db.models import Dialogue, Candidate, JobContext, Account, LlmLog
 from app.services.knowledge_base import kb_service
 from app.services.llm import get_bot_response, get_smart_bot_response
-
 from app.core.config import settings
 from app.db.models import InterviewReminder
 from app.db.models import LlmLog
@@ -55,10 +51,8 @@ logger = logging.getLogger("Engine")
 
 class Engine:
     """
-    Мозг системы. Полный аналог run_hh_worker.py, но адаптированный под Event-Driven архитектуру.
+    Логика обработки
     """
-    # --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ (МЯСО ДВИЖКА) ---
-
     COST_LIMIT_ALERT = 8.0  # Рублей
     COST_LIMIT_BLOCK = 20.0 # Рублей
     RUB_RATE = 85.0         # Курс для расчета
@@ -92,7 +86,6 @@ class Engine:
         content_strip = content.strip()
         # Список маркеров, которые мы не хотим показывать LLM
         forbidden_markers = [
-            
             "[Системное сообщение]"
         ]
         
@@ -113,7 +106,6 @@ class Engine:
 
         lines = ["\n[СПИСОК ДОСТУПНЫХ ОКОН ДЛЯ ЗАПИСИ]:"]
         
-        # Сортируем даты по порядку
         for date_iso in sorted(all_slots.keys()):
             slots = all_slots[date_iso]
             if not slots:
@@ -162,20 +154,15 @@ class Engine:
             if word in text.lower():
                 return True
 
-        # 3. Дополнительная проверка (оставляем без изменений)
         all_numbers_in_text = re.findall(r'\b(1[4-9]|[2-6][0-9]|70)\b', text)
         
         if all_numbers_in_text and str(age_to_check) not in all_numbers_in_text:
-            # Если нашли числа, но нашего среди них нет, пробуем еще раз с мягким поиском
-            # (на случай если re.findall выше что-то упустил из-за границ слов)
             if re.search(r'(?<!\d)' + str(age_to_check) + r'(?!\d)', text):
                 return True
             logger.warning(f"AGE VALIDATION FAILED: LLM suggested {age_to_check}, but found {all_numbers_in_text} in text.")
             return False
 
         if not all_numbers_in_text:
-            # Если чисел вообще не нашли (например "мне полтинник"), а LLM нашла - это подозрительно, но
-            # если мы прошли проверку №1, мы бы уже вернули True.
             return False
 
         return True
@@ -187,7 +174,6 @@ class Engine:
         """
         
         try:
-            # 1. Выбор тарифа (Копия из HH)
             MODEL_PRICING = {
                 "gpt-4o-mini": {"input": 0.150, "output": 0.600},
                 "gpt-4o": {"input": 2.500, "output": 10.000}
@@ -196,29 +182,24 @@ class Engine:
             price_input = pricing["input"]
             price_output = pricing["output"]
 
-            # 2. Извлечение данных
             stats = usage_stats or {}
             p_tokens = stats.get('prompt_tokens', 0)
             c_tokens = stats.get('completion_tokens', 0)
             cached_tokens = stats.get('cached_tokens', 0)
             total_tokens = stats.get('total_tokens', 0)
 
-            # 3. Расчет стоимости (Логика HH: скидка 50% на кэш)
+            #  Расчет стоимости ( скидка 50% на кэш)
             non_cached_input = max(0, p_tokens - cached_tokens)
             
             cost_input_regular = (non_cached_input / 1_000_000) * price_input
             cost_input_cached = (cached_tokens / 1_000_000) * (price_input / 2) 
             cost_output = (c_tokens / 1_000_000) * price_output
-            
-            # Используем Decimal для точности, как в HH
             total_call_cost = Decimal(str(cost_input_regular + cost_input_cached + cost_output))
 
-            # 4. Создание записи лога (Таблица LlmLog)
-            
-            
+            # Создание записи лога (Таблица LlmLog)
             usage_log = LlmLog(
                 dialogue_id=dialogue.id,
-                prompt_type=f"{context} ({model_name})", # Аналог dialogue_state_at_call
+                prompt_type=f"{context} ({model_name})",
                 model=model_name,
                 prompt_tokens=p_tokens,
                 completion_tokens=c_tokens,
@@ -227,26 +208,17 @@ class Engine:
             )
             db.add(usage_log)
 
-            # 5. Обновление счетчиков диалога (JSONB usage_stats)
+            # Обновление счетчиков диалога (JSONB usage_stats)
             if total_tokens > 0:
-                # Берем текущий JSON или пустой словарь
                 current_stats = dict(dialogue.usage_stats or {})
-                
-                # Извлекаем старую стоимость, конвертируем в Decimal для сложения
                 prev_cost = Decimal(str(current_stats.get("total_cost", 0)))
                 new_total_cost = prev_cost + total_call_cost
-                
-                # Обновляем общие счетчики
                 current_stats["total_cost"] = float(new_total_cost) # JSON не поддерживает Decimal, конвертируем обратно во float
                 current_stats["tokens"] = current_stats.get("tokens", 0) + total_tokens
-                
-                # Сохраняем детализацию (как было в колонках HH бота)
                 current_stats["total_prompt_tokens"] = current_stats.get("total_prompt_tokens", 0) + p_tokens
                 current_stats["total_completion_tokens"] = current_stats.get("total_completion_tokens", 0) + c_tokens
                 current_stats["total_cached_tokens"] = current_stats.get("total_cached_tokens", 0) + cached_tokens
-                
                 dialogue.usage_stats = current_stats
-                
 
         except Exception as e:
             logger.error(f"Ошибка при логировании токенов ({context}): {e}")
@@ -298,7 +270,6 @@ class Engine:
 
         verify_attempts = []
         try:
-            # Вызываем LLM через твой обработчик
             response = await get_smart_bot_response(
                 system_prompt=verify_prompt,
                 dialogue_history=[],
@@ -315,7 +286,7 @@ class Engine:
             return parsed.get("correct_date", suggested_date), parsed.get("reasoning", "Без обоснования")
         except Exception as e:
             logger.error(f"Критическая ошибка аудита даты: {e}", extra=log_extra)
-            return suggested_date # В случае падения пропускаем как есть (fallback)
+            return suggested_date 
         
 
     def _check_eligibility(self, profile: dict) -> tuple[bool, str | None]:
@@ -359,7 +330,6 @@ class Engine:
             ready_hours = str(profile.get("ready_20_40_hours", "")).strip().lower()
             if ready_hours == "no":
                 return False, "part_time_not_ready_for_hours"
-        # Если full — подходит, если неизвестно — пропускаем
 
         return True, None
     
@@ -390,10 +360,7 @@ class Engine:
         current_weekday = weekdays_ru[now_msk.weekday()]
         current_date_str = now_msk.strftime("%Y.%m.%d")
         current_time_str = now_msk.strftime("%H:%M")
-
         calendar_context_lines = []
-
-        # Заголовок таблицы (Добавлен столбец AVAILABLE_SLOTS)
         calendar_context_lines.append(
             "IDX | DATE | WEEKDAY | RELATIVE | HUMAN_LABEL | AVAILABLE_SLOTS | MARKER"
         )
@@ -408,7 +375,6 @@ class Engine:
             date_dotted = date_cursor.strftime("%Y.%m.%d")
             date_iso = date_cursor.strftime("%Y-%m-%d")
 
-            # Определяем статус
             if i == 0:
                 relative = "СЕГОДНЯ"
                 human_label = f"сегодня {wd_name} - {day} {month_name}"
@@ -428,19 +394,14 @@ class Engine:
                 relative = ""
                 human_label = f"{wd_name} - {day} {month_name}"
 
-            # --- ИСПРАВЛЕННЫЙ БЛОК ЛОГИКИ СЛОТОВ ---
             if slots_data is None:
-                # Если данные не переданы (для Аудитора), просто ставим прочерк
                 slots_str = "---"
             else:
-                # Получаем слоты из переданных данных
                 day_slots = slots_data.get(date_iso, [])
                 
-                # Если это сегодня — фильтруем слоты, которые уже прошли (+1 час запаса на дорогу)
                 if i == 0 and day_slots:
                     day_slots = [s for s in day_slots if int(s.split(':')[0]) > now_msk.hour]
 
-                # Форматируем строку слотов
                 if wd_idx == 6: # Воскресенье
                     slots_str = "ВЫХОДНОЙ"
                 elif not day_slots:
@@ -613,7 +574,6 @@ class Engine:
         else:
             required_blocks.extend(state_map.get(dialogue_state, ['#QUALIFICATION_RULES#']))
 
-        # Убираем дубли и собираем текст
         final_keys = list(dict.fromkeys(required_blocks))
         prompt_pieces = [prompt_library.get(key, '') for key in final_keys]
 
@@ -625,9 +585,7 @@ class Engine:
             if dialogue.vacancy.description_data:
                 vacancy_full_address = dialogue.vacancy.description_data.get("full_address", "")
 
-        # Замена плейсхолдеров во всех кусках промпта
         if vacancy_title or vacancy_full_address:
-            # Магазин это то что написано в названии вакансии в скобках ()
             shop_name = ""
             if "(" in vacancy_title and ")" in vacancy_title:
                 shop_name = vacancy_title.split("(")[-1].split(")")[0].strip()
@@ -644,10 +602,8 @@ class Engine:
         
         # Определяем состояния, для которых нужен календарь
         SCHEDULING_STATES = ['init_scheduling_spb', 'scheduling_spb_day', 'scheduling_spb_time', 'post_qualification_chat', 'interview_scheduled_spb']
-
-        # Если текущее состояние требует календаря, генерируем и добавляем его
         if dialogue_state in SCHEDULING_STATES:
-            # 1. Добавляем "Человеческий" список слотов (твоя просьба)
+            # 1. Добавляем "Человеческий" список слотов 
             human_slots = await self._get_human_slots_block(sheet_name)
             prompt_pieces.append(human_slots)
 
@@ -709,14 +665,12 @@ class Engine:
                 if scheduled_at and scheduled_at > now_msk:
                     db.add(InterviewReminder(
                         dialogue_id=dialogue.id,
-                        reminder_type=cfg.id, # Используем ID из конфига как тип
+                        reminder_type=cfg.id,
                         scheduled_at=scheduled_at.astimezone(datetime.timezone.utc)
                     ))
                     logger.debug(f"Запланировано напоминание '{cfg.id}' на {scheduled_at}")
 
             await db.flush()
-
-
 
         except Exception as e:
             error_msg = f"⚠️ Ошибка планирования напоминаний для диалога {dialogue.id}: {e}"
@@ -726,6 +680,7 @@ class Engine:
                 "text": error_msg,
                 "alert_type": "admin_only"
             })
+
 
     async def _create_talantix_meeting(
         self,
@@ -753,12 +708,8 @@ class Engine:
         if not settings.services.talantix.enabled:
             ctx_logger.debug("Talantix integration is disabled in config. Skipping _create_talantix_meeting.")
             return None
-
-        # 1. Конвертируем дату/время в timestamp (MSK = UTC+3)
         moscow_tz = datetime.timezone(datetime.timedelta(hours=3))
-        # Вместо moscow_tz используем UTC, чтобы не было сдвига при получении timestamp
         dt_naive = datetime.datetime.strptime(f"{interview_date} {interview_time}", "%Y-%m-%d %H:%M")
-        # Мы принудительно ставим зону UTC, чтобы 14:00 превратилось в 14:00 UTC
         dt_utc = dt_naive.replace(tzinfo=datetime.timezone.utc)
 
         start_ts = int(dt_utc.timestamp() * 1000)
@@ -816,7 +767,7 @@ class Engine:
             ctx_logger.error("❌ Talantix: не удалось создать встречу")
             return None
 
-        meeting_id = success  # book_interview теперь возвращает meeting_id
+        meeting_id = success 
         ctx_logger.info(f"✅ Talantix: встреча создана, meeting_id={meeting_id}")
         return meeting_id
 
@@ -832,7 +783,7 @@ class Engine:
             logger.error(f"❌ Задача без dialogue_id: {task_data}")
             return
 
-        # 1. Создаем контекст логгера (как в rec_log_context)
+        # 1. Создаем контекст логгера 
         log_context = {
             "dialogue_id": dialogue_id,
             "worker": "engine",
@@ -848,11 +799,9 @@ class Engine:
                 await self._process_single_dialogue(dialogue_id, db, ctx_logger, task_data)
                 trigger = task_data.get("trigger")
             except DialogueLockedError:
-                # Просто пробрасываем в воркер, он сам залогирует WARNING
                 raise 
             except Exception as e:
                 ctx_logger.error(f"💥 Критическая ошибка обработки диалога: {e}", exc_info=True)
-                # Тут можно добавить отправку алерта в Sentry/Telegram
                 raise e
             finally:
                 duration = time.monotonic() - start_time
@@ -876,18 +825,13 @@ class Engine:
         Загружает контекст, блокирует диалог и готовит данные для обработки.
         """
         dialogue_processing_start_time = time.monotonic()
-
-        # === 1. БЛОКИРОВКА (Опционально Redis, сейчас используем DB Lock) ===
         dialogue = None
-        trigger = task_data.get("trigger") # Добавить эту строку
-        # === 1. REDIS LOCK (Защита от Race Condition между воркерами) ===
+        trigger = task_data.get("trigger")
         lock_key = f"dialogue_process_{dialogue_id}"
-        # Таймаут 60 секунд (хватит на любой LLM запрос + логику)
         if not await acquire_lock(lock_key, timeout=60):
             ctx_logger.warning(f"⚠️ Диалог {dialogue_id} уже обрабатывается другим воркером. Пропуск.")
             raise DialogueLockedError("Dialogue is locked by another worker.")
         try:
-            # Проверка активности сессии
             if not db.is_active:
                 ctx_logger.error(f"Session is not active for dialogue {dialogue_id}")
                 return
@@ -897,12 +841,9 @@ class Engine:
                 status = await redis.get(f"task_status:{correlation_id}")
                 if status == 'done':
                     ctx_logger.info(f"✅ [Идемпотентность] Задача {correlation_id} уже выполнена. Пропуск.")
-                    return # Выходим, lock освободится в finally внизу
+                    return 
                 
             db_fetch_start = time.monotonic()
-
-            # === 2. ЗАГРУЗКА ДАННЫХ С БЛОКИРОВКОЙ (Row-Level Lock) ===
-            # Используем selectinload для жадной загрузки связей
             stmt = (
                 select(Dialogue)
                 .filter_by(id=dialogue_id)
@@ -925,7 +866,6 @@ class Engine:
                 ctx_logger.debug(f"Dialogue {dialogue_id} is locked or not found. Skipping.")
                 return
 
-            # === 2.05 ПРОВЕРКА АКТУАЛЬНОСТИ НА СТАРТЕ (HH ONLY) ===
             hh_msg_count_start = 0
             trigger = task_data.get("trigger", "unknown")
             is_reminder = trigger in ["reminder", "follow_up"]
@@ -936,20 +876,14 @@ class Engine:
                     status_data = await hh.get_negotiation_status(dialogue.account, db, dialogue.external_chat_id)
                     if status_data and status_data.get("counters"):
                         hh_msg_count_start = status_data["counters"].get("messages", 0)
-                        
-                        # Счетчик из задачи (то, что видел сканер в момент формирования)
                         task_msg_count = task_data.get("initial_msg_count", 0)
-                        
-                        # Если task_msg_count == 0, значит сканер не смог определить счетчик, пропускаем проверку.
-                        # Если hh_msg_count_start == 0, значит мы не смогли получить статус, пропускаем.
-                        # Если в HH уже больше, чем было в задаче — значит, пока задача шла,
-                        # сканер успел прислать еще одну, более свежую.
+
                         if task_msg_count > 0 and hh_msg_count_start > 0 and hh_msg_count_start > task_msg_count:
                             ctx_logger.warning(
                                 f"🛑 ПРЕРЫВАНИЕ (START): В HH {hh_msg_count_start} сообщений, а в задаче {task_msg_count}. "
                                 f"Уже есть более свежая задача в очереди. Пропускаю."
                             )
-                            return # Выходим без rollback
+                            return 
                         else:
                             ctx_logger.info(
                                 f"✅ HH Check (START): В HH {hh_msg_count_start} сообщений, в задаче {task_msg_count}. "
@@ -965,7 +899,7 @@ class Engine:
                 ctx_logger.error(f"Account for dialogue {dialogue_id} not found")
                 return
 
-            # === 2.1 ОПРЕДЕЛЕНИЕ ДИРЕКТОРА (для Google Sheets и TG) ===
+            # === ОПРЕДЕЛЕНИЕ ДИРЕКТОРА (для Google Sheets и TG) ===
             director = None
             sheet_name = "Calendar"  # Default fallback
             
@@ -989,26 +923,22 @@ class Engine:
                 "sheet_name": sheet_name
             })
 
-            # === 3. ОБНОВЛЕНИЕ КОНТЕКСТА ЛОГГЕРА ===
-            # Теперь логгер знает все детали, как в референсе
+            # === ОБНОВЛЕНИЕ КОНТЕКСТА ЛОГГЕРА ===
             ctx_logger.extra.update({
-                "external_chat_id": dialogue.external_chat_id,  # Аналог hh_response_id
-                "account_name": account.name,                   # Аналог recruiter_name
+                "external_chat_id": dialogue.external_chat_id,  
+                "account_name": account.name,                   
                 "vacancy_id": dialogue.vacancy_id,
                 "vacancy_title": dialogue.vacancy.title if dialogue.vacancy else "Unknown",
                 "candidate_id": dialogue.candidate_id,
                 "state": dialogue.current_state,
                 "candidate_data": dialogue.candidate.profile_data if dialogue.candidate else {}
             })
-
-
             ctx_logger.debug(
                 f"Processing dialogue {dialogue.external_chat_id}...",
                 extra={"action": "start_processing", "fetch_time": time.monotonic() - db_fetch_start}
             )
 
-            
-            # === БЛОК КОНТРОЛЯ СТОИМОСТИ (STOP-CRANE) ===
+            # === БЛОК КОНТРОЛЯ СТОИМОСТИ ===
             try:
                 usage_stats = dialogue.usage_stats or {}
                 total_cost_usd = usage_stats.get("total_cost", 0)
@@ -1017,10 +947,7 @@ class Engine:
                 # 1. СТОП-КРАН (Блокировка при критическом расходе)
                 if total_cost_rub > self.COST_LIMIT_BLOCK:
                     ctx_logger.critical(f"🛑 КРИТИЧЕСКИЙ РАСХОД: {total_cost_rub:.2f} руб. Блокирую диалог!")
-                    
-                    # Меняем статус, чтобы воркер больше не трогал этот диалог
                     dialogue.status = 'closed_by_cost' 
-                    # Опционально: можно добавить спец. метку в метаданные
                     meta = dict(dialogue.metadata_json or {})
                     meta["block_reason"] = "cost_limit_exceeded"
                     dialogue.metadata_json = meta
@@ -1051,6 +978,7 @@ class Engine:
             except Exception as cost_err:
                 ctx_logger.error(f"Ошибка в блоке контроля стоимости: {cost_err}")
             # === КОНЕЦ БЛОКА КОНТРОЛЯ СТОИМОСТИ ===
+
             # === СТАТИСТИКА: ЛОГИКА ВОСКРЕШЕНИЯ ===
             # Если кандидат был "молчуном", но написал нам (триггер не от шедулера)
             if dialogue.status == 'timed_out' and trigger not in ["reminder", "system_audit_retry", "data_fix_retry"]:
@@ -1060,7 +988,6 @@ class Engine:
                     .where(AnalyticsEvent.dialogue_id == dialogue.id)
                     .where(AnalyticsEvent.event_type == 'timed_out')
                 )
-
             # === СБРОС ТАЙМАУТА И УРОВНЯ НАПОМИНАНИЙ ===
             # Если пришло любое сообщение от пользователя (не системный триггер)
             if trigger not in ["reminder", "system_audit_retry", "data_fix_retry"]:
@@ -1074,11 +1001,8 @@ class Engine:
                     dialogue.reminder_level = 0
 
 
-            # Загружаем Account (аналог Recruiter из HH бота)
-            # В нашей модели Account уже привязан к диалогу, он подгрузился выше через selectinload
-            
 
-            # === 3. ОБНОВЛЕНИЕ КОНТЕКСТА ЛОГГЕРА ===
+            # ===  ОБНОВЛЕНИЕ КОНТЕКСТА ЛОГГЕРА ===
             # Теперь логгер знает все детали, как в референсе
             ctx_logger.extra.update({
                 "external_chat_id": dialogue.external_chat_id,  # Аналог hh_response_id
@@ -1098,7 +1022,6 @@ class Engine:
 
             # === 4. ПРОВЕРКА НА ТРИГГЕР НАПОМИНАНИЯ (Short Circuit) ===
             # Если задача пришла от Scheduler, отправляем статический текст без LLM
-            # === 4. ПРОВЕРКА НА ТРИГГЕР НАПОМИНАНИЯ (Short Circuit) ===
             if trigger == "reminder":
                 reminder_text = task_data.get("reminder_text")
                 stop_bot = task_data.get("stop_bot", False)
@@ -1123,7 +1046,6 @@ class Engine:
                         ctx_logger.info(f"✅ Напоминание успешно отправлено. ID: {real_msg_id}")
 
                     except Exception as e:
-                        # 3. Обработка критических/терминальных ошибок (403/404)
                         error_str = str(e).lower()
                         if any(err in error_str for err in ["403", "404", "forbidden", "not found"]):
                             ctx_logger.warning(f"🚫 API запретил отправку напоминания. Закрываем диалог. Error: {e}")
@@ -1131,16 +1053,11 @@ class Engine:
                             await db.commit()
                             return # Сообщение удалится из очереди (ACK), так как мы "обработали" ситуацию
                         
-                        # 4. Временные ошибки (сеть, 500-е) — пробрасываем для ретрая
                         ctx_logger.error(f"❌ Сбой при отправке напоминания: {e}")
-                        # Делаем rollback, чтобы не сохранять промежуточные изменения (если были)
                         await db.rollback()
-                        # Бросаем ошибку, чтобы воркер сделал NACK и requeue=True
                         raise e
 
-                    # --- СОХРАНЕНИЕ В ИСТОРИЮ (только после успешной отправки) ---
                     reminder_msg = {
-                        # Если Авито вернул ID - берем его. Если нет - генерируем временный (fallback)
                         'message_id': str(real_msg_id) if real_msg_id else f'rem_{time.time()}',
                         'role': 'assistant',
                         'content': reminder_text,
@@ -1169,31 +1086,23 @@ class Engine:
                             ctx_logger.error(f"Ошибка создания комментария Talantix (silence): {e}")
 
                     await db.commit()
-                    return # Успешный выход
+                    return
                 
-            # === 4. ПОДГОТОВКА PENDING MESSAGES (Адаптация) ===
-            
+
+            # ===  ПОДГОТОВКА PENDING MESSAGES (Адаптация) ===
             # Нам нужно найти те сообщения пользователя с конца списка, на которые мы еще не ответили.
-            
             history = dialogue.history or []
             pending_messages = []
             
             # Идем с конца истории и собираем сообщения пользователя, пока не наткнемся на бота
             for msg in reversed(history):
                 if msg.get('role') == 'user':
-                    # Вставляем в начало списка pending, чтобы сохранить хронологию
                     pending_messages.insert(0, msg)
                 else:
                     # Как только встретили сообщение бота (assistant) — значит, всё до этого уже обработано
                     break
-            
-            # Если нет новых сообщений от пользователя И диалог не в спец. статусе (например, мы сами себя триггернули)
-            # То можно выходить. Но пока оставим логику как есть.
             if not pending_messages:
-                # В референсе был возврат, но у нас могут быть триггеры от таймера или системные команды
-                # Пока просто логируем
                 ctx_logger.debug(f"No new user messages found in history tail.")
-                # return # Пока не делаем return, вдруг это триггер таймера
             
             
             # === 6. PII MASKING & PREPARATION ===
@@ -1203,15 +1112,11 @@ class Engine:
             # 2. Подготовить замаскированный текст для LLM
             
             all_masked_content = []
-            
             for pm in pending_messages:
-                # pm - это реальный объект из dialogue.history (dict)
                 original_content = pm.get('content', '')
-                
                 # Маскируем и пытаемся вытащить телефон/ФИО регулярками
                 masked_content, extracted_fio, extracted_phone = extract_and_mask_pii(original_content)
 
-                # --- ИЗВЛЕЧЕНИЕ ДАННЫХ РЕГУЛЯРКАМИ (Pre-LLM) ---
                 if extracted_phone:
                     dialogue.candidate.phone_number = extracted_phone
                     ctx_logger.info(f"📞 Извлечен телефон из текста: {extracted_phone}")
@@ -1225,6 +1130,7 @@ class Engine:
                 all_masked_content.append(masked_content)
 
             combined_masked_message = "\n".join(all_masked_content)
+
             # === СТАТИСТИКА: ПЕРВЫЙ КОНТАКТ ===
             meta = dict(dialogue.metadata_json or {})
             if not meta.get("first_contact_registered"):
@@ -1243,19 +1149,14 @@ class Engine:
                     dialogue.metadata_json = meta
             # Получаем библиотеку промптов из базы знаний
             prompt_library = await kb_service.get_library()
-            # === 7. СБОРКА ПРОМПТА ===
-            # Ищем описание вакансии в базе знаний (или берем из БД)
+
+
+            # === СБОРКА ПРОМПТА ===
             vacancy_title = dialogue.vacancy.title if dialogue.vacancy else "Вакансия"
             vacancy_city = dialogue.vacancy.city if dialogue.vacancy else "Город не указан"
-            
-            # Тут можно использовать _find_relevant_vacancy, если описания нет в БД,
-            # но в нашей архитектуре описание лежит в JobContext.description_data
             relevant_vacancy_desc = "Описание не найдено"
             if dialogue.vacancy and dialogue.vacancy.description_data:
                 relevant_vacancy_desc = dialogue.vacancy.description_data.get("description_text", "")
-
-            # Собираем системный промпт из блоков (#ROLE#, #FAQ# и т.д.)
-            # Получаем sheet_name из контекста (уже определен выше)
             current_sheet_name = sheet_name
             
             system_prompt = await self._assemble_dynamic_prompt(
@@ -1274,35 +1175,28 @@ class Engine:
             )
             final_system_prompt = system_prompt + context_postfix
 
-            # === 8. ВЫЗОВ LLM (MAIN CALL) ===
+            # === ВЫЗОВ LLM (MAIN CALL) ===
             llm_call_start = time.monotonic()
             llm_data = None
-            attempt_tracker = [] # Ловушка для попыток (tenacity)
+            attempt_tracker = []
 
             try:
                 raw_history = dialogue.history or []
-                
-                # 1. Фильтруем технический мусор
                 filtered_history = [
                     msg for msg in raw_history 
                     if not self._is_technical_message(msg.get('content', '')) 
                 ]
 
-                # 2. ДИНАМИЧЕСКАЯ МАСКИРОВКА ВСЕЙ ИСТОРИИ (НОВОЕ!)
+                # ДИНАМИЧЕСКАЯ МАСКИРОВКА ВСЕЙ ИСТОРИИ 
                 # Мы проходим по истории и маскируем PII в каждом сообщении перед отправкой
                 history_for_llm = []
                 for msg in filtered_history[-25:]:
-                    # Делаем копию сообщения, чтобы не изменить данные в объекте диалога (в БД)
                     msg_masked = dict(msg)
-                    
-                    # Маскируем контент. ФИО и телефоны из истории нам уже не нужны для записи в БД,
-                    # так как они были извлечены ранее, поэтому берем только первый результат.
                     masked_text, _, _ = extract_and_mask_pii(msg_masked.get('content', ''))
-                    
                     msg_masked['content'] = masked_text
                     history_for_llm.append(msg_masked)
                 
-                # 3. САМ ВЫЗОВ
+                # САМ ВЫЗОВ
                 llm_data = await get_bot_response(
                     system_prompt=final_system_prompt,
                     dialogue_history=history_for_llm, # Теперь тут всё в [ЗАМАСКИРОВАНО]
@@ -1365,14 +1259,14 @@ class Engine:
             llm_response = llm_data.get("parsed_response", {})
             usage_stats = llm_data.get("usage_stats", {})
 
-            # === 9. ЛОГИРОВАНИЕ ТОКЕНОВ (УСПЕШНОЕ) ===
+            # === ЛОГИРОВАНИЕ ТОКЕНОВ (УСПЕШНОЕ) ===
             if usage_stats:
                 try:
                     await self._log_llm_usage(db, dialogue, dialogue.current_state, usage_stats)
                 except Exception as e:
                     ctx_logger.error(f"Error logging tokens for dialogue {dialogue.id}: {e}")
 
-            # === 10. РАЗБОР ОТВЕТА ===
+            # === РАЗБОР ОТВЕТА ===
             bot_response_text = llm_response.get("response_text")
             new_state = llm_response.get("new_state", "error_state")
             extracted_data = llm_response.get("extracted_data", {})
@@ -1410,10 +1304,6 @@ class Engine:
             }
 
 
-            
-
-           
-            
 
             if new_state not in ALLOWED_STATES:
                 ctx_logger.error(
@@ -1456,15 +1346,11 @@ class Engine:
                 })
                 
                 ctx_logger.info(f"Отправлено на исправление галлюцинации стейта: {new_state}")
-                return # Обязательно выходим, чтобы текущая обработка прекратилась
-            # --- [END] ВАЛИДАЦИЯ СТАТУСА ---
+                return 
 
 
             # === 12. ВАЛИДАЦИЯ ДАТЫ И ВРЕМЕНИ (АУДИТ + РЕГЛАМЕНТ + СЛОТЫ) ===
             DATE_CRITICAL_STATES = ['init_scheduling_spb', 'scheduling_spb_day', 'scheduling_spb_time', 'interview_scheduled_spb']
-            
-            
-
             # Список ключевых слов (как в HH)
             TIME_KEYWORDS = [
                 "сегодня", "завтра", "послезавтра", "понедельник", "вторник", "сред", "четверг", 
@@ -1484,7 +1370,7 @@ class Engine:
                 if interview_date or has_time_keywords:
                     ctx_logger.info("Есть дата или маркеры")
 
-                    # --- [НОВОЕ] ПРОВЕРКА: ВЫПОЛНИЛ ЛИ БОТ ПРЕДЫДУЩУЮ КОМАНДУ? ---
+                    # --- ПРОВЕРКА: ВЫПОЛНИЛ ЛИ БОТ ПРЕДЫДУЩУЮ КОМАНДУ? ---
                     is_obeyed = False
                     last_msg = dialogue.history[-1] if dialogue.history else {}
                     last_content = str(last_msg.get("content", ""))
@@ -1777,7 +1663,6 @@ class Engine:
                     else:
                         ctx_logger.debug(f"Игнорируем гражданство {raw_citizenship}: стейт {current_state_at_update} не разрешает.")
 
-                # --- 13.3 ОБРАБОТКА ТИПА ЗАНЯТОСТИ (employment_type) ---
                 # --- 13.3 ОБРАБОТКА ТИПА ЗАНЯТОСТИ (employment_type) ---
                 raw_employment_type = extracted_data.get("employment_type")
                 if raw_employment_type:

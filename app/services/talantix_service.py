@@ -6,7 +6,6 @@ import os
 import re
 import json
 from typing import Any
-
 import httpx
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -801,22 +800,15 @@ class TalantixService:
                     sync_with_external_calendar=sync_with_external_calendar,
                     person_message_file_ids=person_message_file_ids,
                 )
-                # --- ДОБАВЬТЕ ЭТИ СТРОКИ ДЛЯ ДАМПА ---
                 print(result)
                 try:
-                    # Печатаем весь ответ в красивом JSON формате
                     debug_res = json.dumps(result, indent=2, ensure_ascii=False)
                     self.logger.info(f"🔍 DEBUG TALANTIX RESPONSE:\n{debug_res}")
                 except Exception as e:
                     self.logger.error(f"Не удалось сериализовать ответ для лога: {result}")
-                # -------------------------------------
-
-                # НОВАЯ БЕЗОПАСНАЯ ЛОГИКА (чтобы не падало)
                 if result is None:
                     self.logger.error("❌ Результат запроса — None (запрос не удался)")
                     return None
-                
-                # НОВАЯ ЛОГИКА ИЗВЛЕЧЕНИЯ ID ИЗ GRAPHQL
                 data = result.get("data", {}).get("createCalendarMeeting", {})
                 typename = data.get("__typename")
 
@@ -828,11 +820,8 @@ class TalantixService:
                 elif typename == "CalendarMeetingCreateError":
                     error_msg = data.get("message", "Unknown error")
                     self.logger.error(f"❌ Ошибка Talantix API: {error_msg}")
-                    # Опционально: можно слать алерт и сюда, если это не "слот занят", 
-                    # а системная ошибка
                     return None
                 else:
-                    # ВОТ ТУТ АЛЕРТ НА ИЗМЕНЕНИЕ API
                     msg = f"🚨 **TALANTIX API CHANGED**\nМетод: CreateCalendarMeeting\nПолучен неожиданный __typename: `{typename}`\nБот не может создать встречу!"
                     self.logger.error(msg)
                     await self.calend_client._send_alert(msg) # Отправляем алерт в ТГ
@@ -940,5 +929,4 @@ class TalantixService:
                 return []
 
 
-# Глобальный экземпляр сервиса
 talantix_service = TalantixService()

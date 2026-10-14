@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # === ОСНОВНОЕ ПРИЛОЖЕНИЕ (All-in-One: FastAPI + Workers) ===
+  # All-in-One: FastAPI + Workers) ===
   app:
     build: .
     container_name: guess_hr_bot

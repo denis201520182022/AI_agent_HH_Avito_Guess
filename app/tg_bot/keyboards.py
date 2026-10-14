@@ -10,7 +10,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Any
 
 # --- Основные Reply-клавиатуры ---
-
 user_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="⚙️ Баланс и Тариф")],
@@ -31,17 +30,13 @@ admin_keyboard = ReplyKeyboardMarkup(
 )
 
 # --- Inline-клавиатуры для Статистики ---
-
-# Главное меню статистики (упрощено: сразу предлагает действия, т.к. подразделов больше нет)
 stats_main_menu_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="👁️ Посмотреть за 7 дней (текст)", callback_data="view_stats_7days")],
         [InlineKeyboardButton(text="📥 Выгрузить в Excel", callback_data="export_excel_start")],
-        # Кнопка "Назад" здесь не нужна, если это корневое сообщение после нажатия Reply-кнопки
     ]
 )
 
-# Кнопка возврата (если провалились куда-то глубоко)
 back_to_stats_main_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="stats_back_to_main")]]
 )
@@ -56,7 +51,6 @@ export_date_options_keyboard = InlineKeyboardMarkup(
     ]
 )
 
-# Функция-хелпер (если понадобится генерация одной кнопки)
 def create_stats_export_keyboard(period: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -65,7 +59,6 @@ def create_stats_export_keyboard(period: str) -> InlineKeyboardMarkup:
     )
 
 # --- Остальные Inline-клавиатуры (Управление и Настройки) ---
-
 cancel_fsm_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_fsm")]]
 )

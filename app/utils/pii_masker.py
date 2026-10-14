@@ -1,18 +1,14 @@
 import re
 from typing import Tuple, Optional
 
-# --- РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ ---
-# Паттерн для поиска ФИО (Фамилия Имя Отчество с большой буквы)
 FIO_PATTERN = re.compile(
     r'\b([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)\s+([А-ЯЁ][а-яё]+)\s+(([А-ЯЁ][а-яё]+))?\b'
 )
 
-# Паттерн для поиска телефонов
 PHONE_PATTERN = re.compile(
     r'(?:\+7|8)?[ \-.(]*(\d{3})[ \-.)]*(\d{3})[ \-.]*(\d{2})[ \-.]*(\d{2})\b'
 )
 
-# Токены маскировки
 FIO_MASK_TOKEN = "[ФИО ЗАМАСКИРОВАНО]"
 PHONE_MASK_TOKEN = "[ТЕЛЕФОН ЗАМАСКИРОВАН]"
 
@@ -20,7 +16,7 @@ PHONE_MASK_TOKEN = "[ТЕЛЕФОН ЗАМАСКИРОВАН]"
 # Эти фразы НЕ будут восприниматься как ФИО, даже если подходят под паттерн
 FIO_EXCLUSIONS = {
     "российская федерация",
-    "российская феберация", # Учел твою опечатку на всякий случай
+    "российская феберация", 
     "беларусская республика",
     "белорусская республика",
     "беларуская республика",
@@ -61,17 +57,12 @@ def extract_and_mask_pii(text: str) -> Tuple[str, Optional[str], Optional[str]]:
         masked_text = PHONE_PATTERN.sub(PHONE_MASK_TOKEN, masked_text, count=1)
 
     # --- 2. Извлечение и маскировка ФИО ---
-    # Используем finditer, чтобы если первое совпадение — это "Россия", мы могли поискать ФИО дальше
     for fio_match in FIO_PATTERN.finditer(masked_text):
         potential_fio = fio_match.group(0).strip()
-        
-        # ПРОВЕРКА ИСКЛЮЧЕНИЙ
         if potential_fio.lower() in FIO_EXCLUSIONS:
-            continue  # Пропускаем это совпадение, ищем дальше
-            
-        # Если не в списке исключений — маскируем
+            continue  
         extracted_fio = potential_fio
         masked_text = masked_text.replace(potential_fio, FIO_MASK_TOKEN, 1)
-        break # Берем первое подходящее ФИО
+        break 
 
     return masked_text, extracted_fio, extracted_phone

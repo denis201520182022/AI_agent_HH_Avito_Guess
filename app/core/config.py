@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- ВСПОМОГАТЕЛЬНЫЕ МОДЕЛИ (ОБЯЗАТЕЛЬНЫЕ ПОЛЯ) ---
 
 class BotConfig(BaseModel):
     id: str
@@ -74,12 +73,11 @@ class ServicesConfig(BaseModel):
     talantix: TalantixServiceConfig
 
 class TalantixConfig(BaseModel):
-    # Пока пусто в конфиге
     pass
 
 class SchedulingGoogleSheetsConfig(BaseModel):
     spreadsheet_url: str
-    calendar_sheet_name: str = "Calendar"  # Default для обратной совместимости, теперь используется Director.google_sheet_name
+    calendar_sheet_name: str = "Calendar"  
 
 class SchedulingConfig(BaseModel):
     provider: str
@@ -136,9 +134,7 @@ class MessagesConfig(BaseModel):
     qualification_failed_farewell: str
 
 # --- ГЛАВНЫЙ КЛАСС НАСТРОЕК ---
-
 class Settings(BaseModel):
-    # Данные из config.yaml (Теперь всё без дефолтов)
     bot: BotConfig
     system: SystemConfig
     platforms: PlatformsConfig
@@ -189,7 +185,6 @@ class Settings(BaseModel):
         # Pydantic выбросит ValidationError, если чего-то не хватает
         return cls(**config_data)
 
-# Глобальный объект настроек
 try:
     settings = Settings.load()
 except Exception as e:

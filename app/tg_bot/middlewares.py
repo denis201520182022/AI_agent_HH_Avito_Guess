@@ -16,9 +16,6 @@ class DbSessionMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        # Открываем асинхронную сессию
         async with self.session_pool() as session:
-            # Кладем сессию в data с ключом "session".
-            # Это позволит использовать аргумент session: AsyncSession в хендлерах.
             data["session"] = session
             return await handler(event, data)

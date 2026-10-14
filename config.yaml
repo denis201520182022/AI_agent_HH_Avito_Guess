@@ -28,7 +28,7 @@ platforms:
     concurrency_limit: 10
   hh:
     enabled: true
-    poll_interval: 1      # Для HH обычно хватает 1 раза в минуту
+    poll_interval: 1   
     vacancy_description_source: "platform" # "platform" или "google_doc"
     dry_run_search: false  # Тестовый режим поиска (без открытия контактов)
 
@@ -52,7 +52,7 @@ services:
 
   google_sheets_report:  # Отчет в гугл таблицы
     enabled: false
-    spreadsheet_url: "https://docs.google.com/spreadsheets/d/1q6Qtcek57WAHDcN3IdS_6GUDTCsAebIjfvzs91fIHCA/edit"
+    spreadsheet_url: ""
     candidates_sheet_name: "Candidates"
 
   crm_integration:  # Интеграция с crm, пока просто заглушка
@@ -73,12 +73,10 @@ scheduling:
 
   # Настройки Google Sheets (как резерв или база знаний)
   google_sheets:
-    spreadsheet_url: "https://docs.google.com/spreadsheets/d/1q6Qtcek57WAHDcN3IdS_6GUDTCsAebIjfvzs91fIHCA/edit"
+    spreadsheet_url: ""
     calendar_sheet_name: "Calendar"
     
     
-
-
 
 # === НАСТРОЙКИ LLM (НЕЙРОСЕТЬ) ===
 llm:
@@ -92,12 +90,11 @@ llm:
 
 # === БАЗА ЗНАНИЙ (ИНСТРУКЦИИ) ===
 knowledge_base:
-  prompt_doc_url: "https://docs.google.com/document/d/1bsNe2J1Gr2oT6ii94qiYbkPiUP2kvSNNf4RzUPi3lFY/edit"
+  prompt_doc_url: ""
   cache_ttl: 3600
 
 # === НАПОМИНАНИЯ (RE-ENGAGEMENT) ===
 reminders:
-  # Напоминания "Молчунам" (кто перестал отвечать в чате)
   silence:
     enabled: true
     quiet_time:

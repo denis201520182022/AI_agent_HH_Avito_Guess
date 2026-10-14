@@ -5,13 +5,11 @@ import datetime
 import logging
 import argparse
 
-# Позволяет импортировать модули из app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.session import AsyncSessionLocal
 from app.services.talantix_service import talantix_service
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -21,8 +19,6 @@ logger = logging.getLogger("test_talantix_meeting")
 async def create_meeting(person_id: int, vacancy_id: int, date_str: str, time_str: str, manager_id: int = None):
     """Только создание встречи в календаре"""
     logger.info(f"📅 Попытка создания встречи: person={person_id}, vacancy={vacancy_id}, date={date_str} {time_str}")
-
-    # 1. Конвертируем в timestamp (MSK)
     try:
         moscow_tz = datetime.timezone(datetime.timedelta(hours=3))
         dt_naive = datetime.datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
@@ -84,16 +80,12 @@ async def cancel_meeting(meeting_id: int):
 async def main():
     parser = argparse.ArgumentParser(description="Прямое управление встречами в Talantix")
     subparsers = parser.add_subparsers(dest="command", help="Команда: create или cancel")
-
-    # Команда create
     create_parser = subparsers.add_parser("create", help="Создать встречу")
     create_parser.add_argument("--person", type=int, required=True, help="ID кандидата (person_id)")
     create_parser.add_argument("--vacancy", type=int, required=True, help="ID вакансии")
     create_parser.add_argument("--date", required=True, help="Дата (YYYY-MM-DD)")
     create_parser.add_argument("--time", required=True, help="Время (HH:MM)")
     create_parser.add_argument("--manager", type=int, help="ID менеджера (необязательно)")
-
-    # Команда cancel
     cancel_parser = subparsers.add_parser("cancel", help="Отменить встречу")
     cancel_parser.add_argument("--id", type=int, required=True, help="ID встречи (meeting_id)")
 

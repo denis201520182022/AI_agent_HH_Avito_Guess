@@ -130,8 +130,6 @@ class TalantixClient:
         self, query: str, variables: dict | None, account: Account, db: AsyncSession, **kwargs
     ) -> GraphQLResponse:
         url = self.base_url + "/graphql"
-        
-        # Первая попытка
         token = await self.get_token(account, db)
 
         headers = kwargs.pop("headers", {})
@@ -203,8 +201,6 @@ class TalantixService:
         self, db: AsyncSession, platform: str, name: str | None = None
     ) -> Account | None:
         """Получение аккаунта из БД по платформе и имени."""
-        # Если имя не передано, используем дефолт для обратной совместимости
-        
         # Если искали по дефолту, пробуем найти по имени, если нет - по дефолту
         stmt = select(Account).where(Account.platform == platform, Account.is_active == True)
         if name:
@@ -215,8 +211,8 @@ class TalantixService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
-    # --- МЕТОДЫ ДЛЯ КАНДИДАТОВ ---
 
+    # --- МЕТОДЫ ДЛЯ КАНДИДАТОВ ---
     async def upsert_candidate(self, candidate_data: dict, account_name: str | None = None) -> int | None:
         """
         Создание или обновление кандидата в Talantix.
@@ -791,7 +787,6 @@ class TalantixService:
         platform_str = f" ({platform.upper()})" if platform else ""
         profile = profile_data or {}
         
-        # Перевод значений
         emp_type = profile.get('employment_type')
         emp_label = "Полная" if emp_type == "full" else "Частичная" if emp_type == "part" else "—"
         
@@ -808,7 +803,6 @@ class TalantixService:
         military = profile.get('has_military_document')
         military_label = "✅ Да" if military == "yes" else "❌ Нет" if military == "no" else "—"
         
-        # Формируем блок анкеты
         profile_items = [
             f"<li><b>Возраст:</b> {profile.get('age', '—')}</li>",
             f"<li><b>Гражданство:</b> {profile.get('citizenship', '—')}</li>",
@@ -946,5 +940,4 @@ class TalantixService:
             vacancy_id=vacancy_id
         )
 
-# Глобальный экземпляр сервиса
 talantix_crm_service = TalantixService()
